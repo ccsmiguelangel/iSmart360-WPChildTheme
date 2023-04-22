@@ -506,6 +506,7 @@ function mepr_account_payments_table_row($txn) {
     ?><th id="mp_table_cancel_element"><a href="#!"><?php _ex('Cancel', 'ui', 'memberpress'); ?></a></th><?php
   }
 
+
   wp_enqueue_script('cancel_subscription_wpapi',get_stylesheet_directory_uri() . '/assets/js/mp_table_cancel_function.js', array('jquery'), '1.0', true);
   wp_localize_script('cancel_subscription_wpapi', 'inbound_localize_script', array(
     "rest_url" => rest_url('inboundlabs').'/cancel_subscription/',
@@ -541,4 +542,52 @@ function cancel_subscription_wpapi_callback($res)
 
   $resp = $order->update_status( 'cancelled' );
   return $resp;
+}
+
+
+
+
+
+function mepr_account_payments($user) {
+  $subscriptions = wcs_get_users_subscriptions( $user->ID ); // Obtenemos todas las suscripciones del usuario
+
+  foreach ( $subscriptions as $subscription ) {
+    // Obtenemos el estado de la suscripción
+    $status = $subscription->get_status(); 
+    // Si la suscripción está pendiente, imprimimos el enlace para reactivarla
+    if ( $status === 'pending-cancel' ) {
+      echo '<div class="mp_wrapper_inbound_labs"><a id="mp_link_reactive_element" href="#!">Si deseas reactivar tu suscripción, has clic aquí.</a></div>';
+      wp_enqueue_script('reactive_subscription_wpapi',get_stylesheet_directory_uri() . '/assets/js/mp_table_reactive_function.js', array('jquery'), '1.0', true);
+      wp_localize_script('reactive_subscription_wpapi', 'inbound_localize_reactive_script', array(
+        "rest_url" => rest_url('inboundlabs').'/reactive_subscription/',
+        "actual_url" => wc_get_account_endpoint_url('subscriptions'),
+        "current_user_id" => get_current_user_id(),
+        "subscription_id" => $subscription->ID,
+        "order_id" => $subscription->parent_id
+      ));
+    }
+  }
+}
+add_action('mepr_account_payments', 'mepr_account_payments');
+
+
+function reactive_subscription_wpapi()
+{
+  $namespace = 'inboundlabs';
+  $route = 'reactive_subscription';
+  $args = array(
+    'methods' => 'POST',
+    'callback' => 'reactive_subscription_wpapi_callback'
+  );
+  register_rest_route($namespace, $route, $args);
+}
+add_action('rest_api_init', 'reactive_subscription_wpapi');
+
+function reactive_subscription_wpapi_callback($res)
+{
+  $subscription = new WC_Subscription( $res->get_param('subscription_id') ); // Obtenemos la suscripción
+  $subscription->update_status( 'active', __( 'Reactivate subscription.', 'woocommerce-subscriptions' ) ); // Reactivamos la suscripción
+  $order = wc_get_order($res->get_param(order_id));
+  $order->update_status( 'completed' );
+  return true;
 }
